@@ -47,8 +47,9 @@ class XmlaOlap4jCube implements Cube, Named
         new HashMap<String, XmlaOlap4jHierarchy>();
     final Map<String, XmlaOlap4jLevel> levelsByUname =
         new HashMap<String, XmlaOlap4jLevel>();
-    final List<XmlaOlap4jMeasure> measures =
-        new ArrayList<XmlaOlap4jMeasure>();
+    private List<XmlaOlap4jMeasure> measures = null;
+    private final Map<String, XmlaOlap4jMeasure> measuresMap =
+       new HashMap<String, XmlaOlap4jMeasure>();
     private final NamedList<XmlaOlap4jNamedSet> namedSets;
     private final MetadataReader metadataReader;
 
@@ -74,8 +75,6 @@ class XmlaOlap4jCube implements Cube, Named
         this.name = name;
         this.caption = caption;
         this.description = description;
-        final Map<String, XmlaOlap4jMeasure> measuresMap =
-            new HashMap<String, XmlaOlap4jMeasure>();
         this.metadataReader =
             new CachingMetadataReader(
                 new RawMetadataReader(),
@@ -106,15 +105,19 @@ class XmlaOlap4jCube implements Cube, Named
             new XmlaOlap4jConnection.DimensionHandler(this),
             restrictions);
 
-        // populate measures up front; a measure is needed in every query
-        olap4jConnection.populateList(
-            measures,
-            context,
-            XmlaOlap4jConnection.MetadataRequest.MDSCHEMA_MEASURES,
-            new XmlaOlap4jConnection.MeasureHandler(),
-            restrictions);
-        for (XmlaOlap4jMeasure measure : measures) {
-            measuresMap.put(measure.getUniqueName(), measure);
+        boolean lazyLoadMeasures = Boolean.getBoolean("org.olap4j.driver.xmla.XmlaOlap4jCube.lazyLoadMeasures");
+        if (!lazyLoadMeasures) {
+           measures = new ArrayList<XmlaOlap4jMeasure>();
+           // populate measures up front; a measure is needed in every query
+           olap4jConnection.populateList(
+               measures,
+               context,
+               XmlaOlap4jConnection.MetadataRequest.MDSCHEMA_MEASURES,
+               new XmlaOlap4jConnection.MeasureHandler(),
+               restrictions);
+           for (XmlaOlap4jMeasure measure : measures) {
+               measuresMap.put(measure.getUniqueName(), measure);
+           }
         }
 
         // populate named sets
@@ -172,6 +175,35 @@ class XmlaOlap4jCube implements Cube, Named
     }
 
     public List<Measure> getMeasures() {
+       if (measures == null) {
+
+          final XmlaOlap4jConnection.Context context =
+             new XmlaOlap4jConnection.Context(this, null, null, null);
+
+         String[] restrictions = {
+             "CATALOG_NAME", olap4jSchema.olap4jCatalog.getName(),
+             "SCHEMA_NAME", olap4jSchema.getName(),
+             "CUBE_NAME", getName()
+         };
+
+          measures = new ArrayList<XmlaOlap4jMeasure>();
+
+          // populate measures
+          try {
+             olap4jSchema.olap4jCatalog.olap4jDatabaseMetaData.olap4jConnection.populateList(
+                 measures,
+                 context,
+                 XmlaOlap4jConnection.MetadataRequest.MDSCHEMA_MEASURES,
+                 new XmlaOlap4jConnection.MeasureHandler(),
+                 restrictions);
+          } catch (OlapException e) {
+             throw new RuntimeException(e);
+          }
+          for (XmlaOlap4jMeasure measure : measures) {
+              measuresMap.put(measure.getUniqueName(), measure);
+          }
+
+       }
         return Olap4jUtil.cast(measures);
     }
 
@@ -315,6 +347,25 @@ class XmlaOlap4jCube implements Cube, Named
             this.measuresMap = measuresMap;
         }
 
+        public boolean isMemberCached(String memberUniqueName) {
+           // First, look in measures map.
+           XmlaOlap4jMeasure measure = measuresMap.get(memberUniqueName);
+           if (measure != null) return true;
+           
+           // Next, look in cache.
+           final SoftReference<XmlaOlap4jMember> memberRef =
+               memberMap.get(memberUniqueName);
+           if (memberRef != null) {
+               final XmlaOlap4jMember member = memberRef.get();
+               if (member != null) {
+                   return true;
+               }
+           }
+
+           return false;
+           
+        }
+        
         public XmlaOlap4jMember lookupMemberByUniqueName(
             String memberUniqueName) throws OlapException
         {
@@ -457,6 +508,10 @@ class XmlaOlap4jCube implements Cube, Named
                         + "'");
             }
         }
+        
+        public boolean isMemberCached(String memberUniqueName) {
+           return false;
+        }
 
         public void lookupMembersByUniqueName(
             List<String> memberUniqueNames,
@@ -579,12 +634,12 @@ class XmlaOlap4jCube implements Cube, Named
             // returned by MSCHEMA_MEMBERS but not MDSCHEMA_MEASURES.
             switch (level.getDimension().getDimensionType()) {
             case MEASURE:
-                if (!level.olap4jHierarchy.olap4jDimension.olap4jCube.measures
+                if (!level.olap4jHierarchy.olap4jDimension.olap4jCube.getMeasures()
                     .isEmpty())
                 {
                     return Olap4jUtil.cast(
                         level.olap4jHierarchy.olap4jDimension.olap4jCube
-                            .measures);
+                            .getMeasures());
                 }
                 break;
             }

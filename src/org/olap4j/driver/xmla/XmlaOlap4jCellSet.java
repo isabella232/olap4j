@@ -219,9 +219,26 @@ abstract class XmlaOlap4jCellSet implements CellSet {
             }
         }
 
-        // Fetch all members on all axes. Hopefully it can all be done in one
-        // round trip, or they are in cache already.
-        metadataReader.lookupMembersByUniqueName(uniqueNames, memberMap);
+        boolean lazyMemberLookup = Boolean.getBoolean("org.olap4j.driver.xmla.XmlaOlap4jCellSet.lazyMemberLookup");
+        
+        if (lazyMemberLookup) {
+
+           // Lazy loading of members
+           // Fetch any members that are already cached from the metadata reader
+           // For non-cached members we will create a LazyMember object below
+           for (String uname: uniqueNames) {
+              if (metadataReader.isMemberCached(uname)) {
+                 memberMap.put(uname, metadataReader.lookupMemberByUniqueName(uname));
+              }
+           }
+
+        } else {
+
+           // Fetch all members on all axes. Hopefully it can all be done in one
+           // round trip, or they are in cache already.
+           metadataReader.lookupMembersByUniqueName(uniqueNames, memberMap);
+
+        }
 
         // Second pass, populate the axis.
         final Map<Property, Object> propertyValues =
@@ -252,14 +269,28 @@ abstract class XmlaOlap4jCellSet implements CellSet {
                     final String uname = stringElement(memberNode, "UName");
                     XmlaOlap4jMemberBase member = memberMap.get(uname);
                     if (member == null) {
-                        final String caption =
-                            stringElement(memberNode, "Caption");
-                        final int lnum = integerElement(memberNode, "LNum");
-                        final Hierarchy hierarchy =
-                            lookupHierarchy(metaData.cube, hierarchyName);
-                        final Level level = hierarchy.getLevels().get(lnum);
-                        member = new XmlaOlap4jSurpriseMember(
-                            this, level, hierarchy, lnum, caption, uname);
+
+                       final String caption =
+                          stringElement(memberNode, "Caption");
+                       final int lnum = integerElement(memberNode, "LNum");
+
+                       if (lazyMemberLookup) {
+
+                          // Create a LazyMember object
+                          final String levelUniqueName =
+                             stringElement(memberNode, "LName");
+                          member = new XmlaOlap4jLazyMember(this, hierarchyName, levelUniqueName, lnum, caption, uname);
+
+                       } else {
+                       
+                           final Hierarchy hierarchy =
+                               lookupHierarchy(metaData.cube, hierarchyName);
+                           final Level level = hierarchy.getLevels().get(lnum);
+                           member = new XmlaOlap4jSurpriseMember(
+                               this, level, hierarchy, lnum, caption, uname);
+
+                       }
+
                     }
                     propertyValues.clear();
                     for (Element childNode : childElements(memberNode)) {
@@ -1473,6 +1504,224 @@ abstract class XmlaOlap4jCellSet implements CellSet {
             return true;
         }
     }
+
+    /**
+     * Lazy-load implementation of {@link Member} for a member which has not
+     * been loaded yet, but some initial information is available for
+     * (eg. from the CellSet response metadata). The {@link Member} object
+     * will be retrieved when needed.
+     */
+    private static class XmlaOlap4jLazyMember
+        implements XmlaOlap4jMemberBase
+    {
+        private final XmlaOlap4jCellSet cellSet;
+        private final String hierarchyUniqueName;
+        private final String levelUniqueName;
+        private final int levelNum;
+        private final String caption;
+        private final String memberUniqueName;
+        
+        private XmlaOlap4jMemberBase member = null;
+
+        XmlaOlap4jLazyMember(
+            XmlaOlap4jCellSet cellSet,
+            String hierarchyUniqueName,
+            String levelUniqueName,
+            int levelNum,
+            String caption,
+            String memberUniqueName)
+        {
+            this.cellSet = cellSet;
+            this.hierarchyUniqueName = hierarchyUniqueName;
+            this.levelUniqueName = levelUniqueName;
+            this.levelNum = levelNum;
+            this.caption = caption;
+            this.memberUniqueName = memberUniqueName;
+        }
+
+        public final XmlaOlap4jCube getCube() {
+            return cellSet.metaData.cube;
+        }
+
+        public final XmlaOlap4jConnection getConnection() {
+            return getCatalog().olap4jDatabaseMetaData.olap4jConnection;
+        }
+
+        public final XmlaOlap4jCatalog getCatalog() {
+            return getCube().olap4jSchema.olap4jCatalog;
+        }
+
+        private void loadMember() {
+           
+           if (member == null) {
+              
+              try {
+                 MetadataReader metadataReader = cellSet.metaData.cube.getMetadataReader();
+                 this.member = metadataReader.lookupMemberByUniqueName(memberUniqueName);
+              } catch (OlapException e) {
+                 throw new RuntimeException(e);
+              }
+
+           }
+
+           if (member == null) {
+              
+              // perhaps a calculated member - create a SurpriseMember object
+              try {
+                final Hierarchy hierarchy = 
+                    cellSet.lookupHierarchy(cellSet.metaData.cube, hierarchyUniqueName);
+                final Level level = hierarchy.getLevels().get(levelUniqueName);
+                member = new XmlaOlap4jSurpriseMember(
+                    cellSet, level, hierarchy, levelNum, caption, memberUniqueName);
+              } catch (OlapException e) {
+                 throw new RuntimeException(e);
+              }
+              
+           }
+           
+           if (member == null) {
+              throw new RuntimeException("Unable to load Member: " + memberUniqueName);
+           }
+
+        }
+        
+        public Map<Property, Object> getPropertyValueMap() {
+           loadMember();
+           return member.getPropertyValueMap();
+        }
+
+        public NamedList<? extends Member> getChildMembers() throws OlapException {
+           loadMember();
+           return member.getChildMembers();
+        }
+
+        public int getChildMemberCount() throws OlapException {
+           loadMember();
+           return member.getChildMemberCount();
+        }
+
+        public Member getParentMember() {
+           loadMember();
+           return member.getParentMember();
+        }
+
+        public Level getLevel() {
+           loadMember();
+           return member.getLevel();
+        }
+
+        public Hierarchy getHierarchy() {
+           loadMember();
+           return member.getHierarchy();
+        }
+
+        public Dimension getDimension() {
+            return getHierarchy().getDimension();
+        }
+
+        public Type getMemberType() {
+           loadMember();
+           return member.getMemberType();
+        }
+
+        public boolean isAll() {
+           loadMember();
+           return member.isAll();
+        }
+
+        public boolean isChildOrEqualTo(Member mbr) {
+           loadMember();
+           return member.isChildOrEqualTo(mbr);
+        }
+
+        public boolean isCalculated() {
+           loadMember();
+           return member.isCalculated();
+        }
+
+        public int getSolveOrder() {
+           loadMember();
+           return member.getSolveOrder();
+        }
+
+        public ParseTreeNode getExpression() {
+           loadMember();
+           return member.getExpression();
+        }
+
+        public List<Member> getAncestorMembers() {
+           loadMember();
+           return member.getAncestorMembers();
+        }
+
+        public boolean isCalculatedInQuery() {
+           loadMember();
+           return member.isCalculatedInQuery();
+        }
+
+        public Object getPropertyValue(Property property) throws OlapException {
+           loadMember();
+           return member.getPropertyValue(property);
+        }
+
+        public String getPropertyFormattedValue(Property property) throws OlapException {
+           loadMember();
+           return member.getPropertyFormattedValue(property);
+        }
+
+        public void setProperty(Property property, Object value) throws OlapException {
+           loadMember();
+           member.setProperty(property, value);
+        }
+
+        public NamedList<Property> getProperties() {
+           loadMember();
+           return member.getProperties();
+        }
+
+        public int getOrdinal() {
+           loadMember();
+           return member.getOrdinal();
+        }
+
+        public boolean isHidden() {
+           loadMember();
+           return member.isHidden();
+        }
+
+        public int getDepth() {
+           loadMember();
+           return member.getDepth();
+        }
+
+        public Member getDataMember() {
+           loadMember();
+           return member.getDataMember();
+        }
+
+        public String getName() {
+            return caption;
+        }
+
+        public String getUniqueName() {
+            return memberUniqueName;
+        }
+
+        public String getCaption() {
+            return caption;
+        }
+
+        public String getDescription() {
+           loadMember();
+           return member.getDescription();
+        }
+
+        public boolean isVisible() {
+           loadMember();
+           return member.isVisible();
+        }
+    }
+
 }
 
 // End XmlaOlap4jCellSet.java
