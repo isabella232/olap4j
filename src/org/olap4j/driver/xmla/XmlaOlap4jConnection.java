@@ -143,7 +143,9 @@ abstract class XmlaOlap4jConnection implements OlapConnection {
      * Enabling it makes the connection print out all queries
      * to {@link System#out}
      */
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG =
+        "true".equals(System.getProperty(
+            "org.olap4j.driver.xmla.XmlaOlap4jConnection.debug"));
 
     /**
      * Creates an Olap4j connection an XML/A provider.
