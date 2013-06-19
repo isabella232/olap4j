@@ -53,11 +53,11 @@ import static org.olap4j.driver.xmla.XmlaOlap4jUtil.*;
  * @author jhyde
  * @since May 23, 2007
  */
-abstract class XmlaOlap4jConnection implements OlapConnection {
+public abstract class XmlaOlap4jConnection implements OlapConnection {
     /**
      * Handler for errors.
      */
-    final XmlaHelper helper = new XmlaHelper();
+    public final XmlaHelper helper = new XmlaHelper();
 
     /**
      * <p>Current database.
@@ -82,14 +82,14 @@ abstract class XmlaOlap4jConnection implements OlapConnection {
 
     final Factory factory;
 
-    final XmlaOlap4jProxy proxy;
+    public final XmlaOlap4jProxy proxy;
 
     private boolean closed = false;
 
     /**
      * URL of the HTTP server to which to send XML requests.
      */
-    final XmlaOlap4jServerInfos serverInfos;
+    public final XmlaOlap4jServerInfos serverInfos;
 
     private Locale locale;
 

@@ -38,14 +38,14 @@ import java.util.*;
  * @author jhyde
  * @since Dec 2, 2007
  */
-abstract class XmlaOlap4jUtil {
+public abstract class XmlaOlap4jUtil {
     static final String LINE_SEP =
         System.getProperty("line.separator", "\n");
     static final String SOAP_PREFIX = "SOAP-ENV";
-    static final String SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
+    public static final String SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
     static final String XMLA_PREFIX = "xmla";
-    static final String XMLA_NS = "urn:schemas-microsoft-com:xml-analysis";
-    static final String MDDATASET_NS =
+    public static final String XMLA_NS = "urn:schemas-microsoft-com:xml-analysis";
+    public static final String MDDATASET_NS =
         "urn:schemas-microsoft-com:xml-analysis:mddataset";
     static final String ROWSET_NS =
         "urn:schemas-microsoft-com:xml-analysis:rowset";
@@ -70,7 +70,7 @@ abstract class XmlaOlap4jUtil {
      * Parse a stream into a Document (no validation).
      *
      */
-    static Document parse(byte[] in)
+    public static Document parse(byte[] in)
         throws SAXException, IOException
     {
         InputSource source = new InputSource(new ByteArrayInputStream(in));
@@ -163,7 +163,7 @@ abstract class XmlaOlap4jUtil {
         return buf.toString();
     }
 
-    static String prettyPrint(Element element) {
+    public static String prettyPrint(Element element) {
         StringBuilder string = new StringBuilder();
         prettyPrintLoop(element, string, "");
         return string.toString();
@@ -257,7 +257,7 @@ abstract class XmlaOlap4jUtil {
         }
     }
 
-    static Element findChild(Element element, String ns, String tag) {
+    public static Element findChild(Element element, String ns, String tag) {
         final NodeList childNodes = element.getChildNodes();
         for (int i = 0; i < childNodes.getLength(); i++) {
             if (childNodes.item(i) instanceof Element) {
@@ -272,7 +272,7 @@ abstract class XmlaOlap4jUtil {
         return null;
     }
 
-    static String stringElement(Element row, String name) {
+    public static String stringElement(Element row, String name) {
         final NodeList childNodes = row.getChildNodes();
         for (int i = 0; i < childNodes.getLength(); i++) {
             final Node node = childNodes.item(i);
@@ -292,7 +292,7 @@ abstract class XmlaOlap4jUtil {
         }
     }
 
-    static int intElement(Element row, String name) {
+    public static int intElement(Element row, String name) {
         return integerElement(row, name).intValue();
     }
 
@@ -324,7 +324,7 @@ abstract class XmlaOlap4jUtil {
         return list;
     }
 
-    static List<Element> findChildren(Element element, String ns, String tag) {
+    public static List<Element> findChildren(Element element, String ns, String tag) {
         final List<Element> list = new ArrayList<Element>();
         for (Node node : listOf(element.getChildNodes())) {
             if (tag.equals(node.getLocalName())
